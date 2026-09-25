@@ -29,6 +29,12 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Instalar dependencias
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          pip install -r requirements.txt
+
       - name: Verificar si hay un horario pendiente
         id: verificar
         run: python scripts/verificar_horario.py
@@ -42,13 +48,6 @@ jobs:
           else
             echo "valor=${{ steps.verificar.outputs.tipo }}" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Instalar dependencias
-        if: steps.tipo.outputs.valor != ''
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          pip install -r requirements.txt
 
       - name: Publicar contenido (tipo ${{ steps.tipo.outputs.valor }})
         if: steps.tipo.outputs.valor != ''
