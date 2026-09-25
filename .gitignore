@@ -1,0 +1,5 @@
+descargas/
+output/
+__pycache__/
+*.pyc
+.env
