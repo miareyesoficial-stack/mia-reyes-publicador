@@ -1,0 +1,84 @@
+name: Publicar contenido de Mia Reyes
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      tipo:
+        description: 'Forzar publicacion (imagen o video). Vacio = automatico segun el horario (solo si hay uno pendiente ahora).'
+        required: false
+        default: ''
+
+concurrency:
+  group: publicar-mia-reyes
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Verificar si hay un horario pendiente
+        id: verificar
+        run: python scripts/verificar_horario.py
+
+      - name: Determinar tipo a publicar (manual o automatico)
+        id: tipo
+        if: steps.verificar.outputs.hay_pendiente == 'true' || github.event.inputs.tipo != ''
+        run: |
+          if [ -n "${{ github.event.inputs.tipo }}" ]; then
+            echo "valor=${{ github.event.inputs.tipo }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "valor=${{ steps.verificar.outputs.tipo }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Instalar dependencias
+        if: steps.tipo.outputs.valor != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          pip install -r requirements.txt
+
+      - name: Publicar contenido (tipo ${{ steps.tipo.outputs.valor }})
+        if: steps.tipo.outputs.valor != ''
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+          FACEBOOK_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
+          INSTAGRAM_BUSINESS_ID: ${{ secrets.INSTAGRAM_BUSINESS_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python publicar.py --tipo ${{ steps.tipo.outputs.valor }}
+
+      - name: Subir media generado (respaldo, por si falla la publicacion)
+        if: steps.tipo.outputs.valor != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-${{ steps.tipo.outputs.valor }}-run${{ github.run_number }}
+          path: |
+            output/*.mp4
+            descargas/*
+          if-no-files-found: ignore
+
+      - name: Marcar horario como publicado (solo en runs automaticos)
+        if: steps.tipo.outputs.valor != '' && github.event.inputs.tipo == ''
+        run: |
+          python scripts/marcar_publicado.py "${{ steps.verificar.outputs.hora }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add estado_publicaciones.json
+          git commit -m "Marca horario ${{ steps.verificar.outputs.hora }} como publicado" || echo "Sin cambios que commitear"
+          git pull --rebase
+          git push
