@@ -11,8 +11,8 @@ import config
 
 def generar_caption(ruta_imagen):
     genai.configure(api_key=config.GEMINI_API_KEY)
-    modelo = genai.GenerativeModel("gemini-1.5-flash")
-
+    modelo = genai.GenerativeModel("gemini-2.5-flash")
+    
     angulo = random.choice(config.ANGULOS_CAPTION)
 
     prompt = f"""
