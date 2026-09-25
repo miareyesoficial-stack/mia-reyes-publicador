@@ -40,6 +40,7 @@ def _crear_contenedor(url_publica, caption, es_video):
         datos["image_url"] = url_publica
 
     resp = requests.post(endpoint, data=datos, timeout=60)
+    print("META RESPONSE:", resp.status_code, resp.text)
     resp.raise_for_status()
     return resp.json()["id"]
 
