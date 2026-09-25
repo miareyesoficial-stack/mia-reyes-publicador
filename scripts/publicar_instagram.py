@@ -8,6 +8,7 @@ de un Release temporal de GitHub para conseguirle una URL publica, y
 borrar ese Release apenas termina de publicarse.
 """
 import os
+import base64
 import time
 
 import requests
@@ -18,14 +19,13 @@ API_BASE = "https://graph.facebook.com/v20.0"
 
 
 def publicar_en_instagram(ruta_media, caption, es_video):
-    url_publica, tag_release = _subir_a_release_temporal(ruta_media)
+    url_publica, ruta_repo, sha = _subir_a_repo_temporal(ruta_media)
     try:
         contenedor_id = _crear_contenedor(url_publica, caption, es_video)
         _esperar_contenedor_listo(contenedor_id)
         return _publicar_contenedor(contenedor_id)
     finally:
-        _borrar_release_temporal(tag_release)
-
+        _borrar_de_repo_temporal(ruta_repo, sha)
 
 def _crear_contenedor(url_publica, caption, es_video):
     endpoint = f"{API_BASE}/{config.INSTAGRAM_BUSINESS_ID}/media"
@@ -74,64 +74,48 @@ def _publicar_contenedor(contenedor_id):
     return resp.json()
 
 
-def _subir_a_release_temporal(ruta_media):
+def _subir_a_repo_temporal(ruta_media):
     repo = config.GITHUB_REPOSITORY
     token = config.GITHUB_TOKEN
-    tag = f"temp-media-{int(time.time())}"
     headers = {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json",
     }
-
-    resp = requests.post(
-        f"https://api.github.com/repos/{repo}/releases",
-        headers=headers,
-        json={"tag_name": tag, "name": tag, "draft": False, "prerelease": True},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    release = resp.json()
-    upload_url = release["upload_url"].split("{")[0]
 
     nombre_archivo = os.path.basename(ruta_media)
+    ruta_repo = f"tmp_media/{int(time.time())}_{nombre_archivo}"
     with open(ruta_media, "rb") as f:
-        contenido = f.read()
+        contenido_b64 = base64.b64encode(f.read()).decode("utf-8")
 
-    mime = "video/mp4" if ruta_media.lower().endswith((".mp4", ".mov", ".m4v")) else "image/jpeg"
-    resp_asset = requests.post(
-        upload_url,
-        headers={**headers, "Content-Type": mime},
-        params={"name": nombre_archivo},
-        data=contenido,
-        timeout=120,
+    resp = requests.put(
+        f"https://api.github.com/repos/{repo}/contents/{ruta_repo}",
+        headers=headers,
+        json={
+            "message": f"Media temporal para publicar: {nombre_archivo}",
+            "content": contenido_b64,
+            "branch": "main",
+        },
+        timeout=60,
     )
-    resp_asset.raise_for_status()
-    asset = resp_asset.json()
-    return asset["browser_download_url"], tag
-
-
-def _borrar_release_temporal(tag):
+    resp.raise_for_status()
+    sha = resp.json()["content"]["sha"]
+    url_publica = f"https://raw.githubusercontent.com/{repo}/main/{ruta_repo}"
+    return url_publica, ruta_repo, sha
+def _borrar_de_repo_temporal(ruta_repo, sha):
     repo = config.GITHUB_REPOSITORY
     token = config.GITHUB_TOKEN
     headers = {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json",
     }
-    resp = requests.get(
-        f"https://api.github.com/repos/{repo}/releases/tags/{tag}",
-        headers=headers,
-        timeout=30,
-    )
-    if resp.status_code != 200:
-        return
-    release_id = resp.json()["id"]
     requests.delete(
-        f"https://api.github.com/repos/{repo}/releases/{release_id}",
+        f"https://api.github.com/repos/{repo}/contents/{ruta_repo}",
         headers=headers,
+        json={
+            "message": f"Eliminar media temporal: {ruta_repo}",
+            "sha": sha,
+            "branch": "main",
+        },
         timeout=30,
     )
-    requests.delete(
-        f"https://api.github.com/repos/{repo}/git/refs/tags/{tag}",
-        headers=headers,
-        timeout=30,
-    )
+    
