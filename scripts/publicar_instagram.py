@@ -100,6 +100,14 @@ def _subir_a_repo_temporal(ruta_media):
     resp.raise_for_status()
     sha = resp.json()["content"]["sha"]
     url_publica = f"https://raw.githubusercontent.com/{repo}/main/{ruta_repo}"
+    for _ in range(10):
+        try:
+            check = requests.head(url_publica, timeout=10)
+            if check.status_code == 200:
+                break
+        except requests.RequestException:
+            pass
+        time.sleep(2)
     return url_publica, ruta_repo, sha
 def _borrar_de_repo_temporal(ruta_repo, sha):
     repo = config.GITHUB_REPOSITORY
